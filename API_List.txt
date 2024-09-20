@@ -1,0 +1,173 @@
+Product controller
+
+get all Product
+add a product
+update a product
+delete a product
+filter a product
+rate a product
+
+
+User controller
+
+signUp (email, name, password, typeOfUser(seller, customer))
+signIn (email, password)
+
+
+
+//create a counter collection -> {_id: "cartItemId", value: 0}
+//when we will add a new cartItem into the cartItems collection,
+we will extract the current value of "value" field from collection counter and
+add that value as an id of that new cartItem
+
+
+aggregation pipeline implementation
+
+
+findout the averageRating of each product
+
+db.products.aggregate([
+    // deconstruct the nested array elements into individual documents
+    {  
+        $unwind: "$ratings"
+    },
+    //group documents based on their name field interms of group key
+    //findout the averageRating of individual product
+    {
+        $group: {
+            _id: "$name",
+            averageRating: {$avg: "$ratings.rating"}
+        }
+    }
+])
+
+
+find out the total rating of each product
+
+db.products.aggregate([
+    //if you want you can perform the same operation using group operator -> $group
+    //but here i am using another way to extract those temporary fields
+    //project on name field and countOfRating
+
+
+    //but using only this ($project: {name: 1, countOfRating: {$size: "$ratings"}}) will lead to mongoservererror
+    //because there might be possible that in one of the product document does not have any ratings field or lets say that ratings field storing null value, so in order to avoid that error we are going to use $cond operator so that if any document doesnot have ratings field or ratings field value is null we are going to set the value to 0 otherwise we are going to return the length of that nested array and we are using $isArray opertor to check a particular input field is an array or not, for more details read about $cond in mongodb docs
+    {
+        $project: {name: 1, countOfRating: 
+        {$cond: {if: {$isArray: "$ratings"}, then: {$size: "$ratings"}, else: 0}}}  
+    },
+
+    //sort the collection of product documents based on countOfRating either in ascending order or in descending order
+    {
+        //use -1 for get the collection in descending order
+        $sort: {countOfRating: -1}
+    }, 
+    //limit to only 1 product document in result which has the highest rating
+    {
+        $limit: 1
+    }
+])
+
+
+
+
+await collection.aggregate([
+
+       {
+         $unwind: "$tags"
+       },
+      {
+        $group: {
+          _id: "$tags",
+          if you want to embedded the same collection document into this insight on which collection you are working you can write like this ->
+
+          expenses: {
+            $push: {
+              _id: "$_id",
+              title: "$title",
+              amount: "$amount",
+              date: "$date",
+              isRecurring: "$isRecurring",
+              tags: "$tags"
+            }
+          }
+
+        }
+      }
+    ]).toArray();
+
+
+
+GetQualifiedStudentsCount: Adjust the method to determine the count of students who meet specific criteria. Only include students with age greater than 9, a grade less than or equal to 'B', an assignment titled 'math', and a score of 60 or higher.
+
+
+    await collection.aggregate([
+      {
+        $match: {
+            age: { $gt: 9 },
+            grade: { $lte: 'B' },
+            'assignments.title': { $in: ['Math'] },
+            'assignments.score': { $gte: 60 }
+        }
+    },
+    {
+        $count: 'qualifiedStudentsCount'
+    }
+    ]).toArray();
+
+
+updateStudentGrade: Implement a method to update a student's grade based on their assignment scores. If a student's assignment score is updated with extra credit points, recalculate their grade accordingly. Ensure that this operation is atomic and that the assignment score update and grade recalculation are performed as a single transaction.
+The following grading scale is used to assign grades based on the average assignment scores A: 90% and above B: 80% - 89% C: 70% - 79% D: 60% - 69% F: Below 60%
+
+        const db = getDB();
+        const client = getClient();
+        const session = client.startSession();
+
+        try {
+            session.startTransaction();
+            const student = await db.collection(collectionName).findOne({ _id: new ObjectId(studentId) }, { session });
+            if (!student) {
+                throw new Error('Student not found.');
+            }
+
+            // Calculate new scores and grade
+            const updatedAssignments = student.assignments.map(assignment => {
+                return {
+                    ...assignment,
+                    score: assignment.score + extraCreditPoints
+                };
+            });
+
+            // Calculate the new grade based on the updated assignments
+            const totalScore = updatedAssignments.reduce((sum, assignment) => sum + assignment.score, 0);
+            const averageScore = totalScore / updatedAssignments.length;
+
+            let updatedGrade = 'A';
+            if (averageScore >= 90) {
+                updatedGrade = 'A';
+            } else if (averageScore >= 80) {
+                updatedGrade = 'B';
+            } else if (averageScore >= 70) {
+                updatedGrade = 'C';
+            } else if (averageScore >= 60) {
+                updatedGrade = 'D';
+            } else {
+                updatedGrade = 'F';
+            }
+
+            // Perform both updates in a single transaction
+            await db.collection(collectionName).updateOne(
+                { _id: new ObjectId(studentId) },
+                { $set: { assignments: updatedAssignments, grade: updatedGrade } },
+                { session }
+            );
+
+            await session.commitTransaction();
+            session.endSession();
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
+        } finally {
+            client.close();
+        }
